@@ -1,0 +1,92 @@
+---
+title: "ASSIGNMENT 05.2: Query Tabular Data with SQL"
+author: "Rashaad Mohammed Mirza"
+date: "Summer Full 2024"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+# Load necessary libraries
+library(dplyr) # For data manipulation
+library(sqldf) # For executing SQL queries on data frames
+library(knitr) # For generating tables from data frames and embedding R code within Markdown
+library(kableExtra) # For adding advanced styling and customization to tables
+library(stringr)  # For string manipulation
+```
+
+```{r data, include=FALSE}
+# Load the data from the CSV files
+jan_to_mar <- read.csv("https://s3.us-east-2.amazonaws.com/artificium.us/assignments/80.xml/a-80-305/gen-xml/synthsalestxns-Jan2Mar.csv")
+sep_to_oct <- read.csv("https://s3.us-east-2.amazonaws.com/artificium.us/assignments/80.xml/a-80-305/gen-xml/synthsalestxns-Sep2Oct.csv")
+nov_to_dec <- read.csv("https://s3.us-east-2.amazonaws.com/artificium.us/assignments/80.xml/a-80-305/gen-xml/synthsalestxns-Nov2Dec.csv")
+
+# Combine the data into a single data frame
+all_data <- bind_rows(jan_to_mar, sep_to_oct, nov_to_dec)
+
+# Remove non-numeric characters from amount column
+all_data$amount <- as.numeric(str_replace_all(all_data$amount, "[^0-9.]", ""))
+
+# Convert the 'date' column from character to Date type using the specified format
+all_data$date <- as.Date(all_data$date, format="%m/%d/%y")
+# Extract the year and month from the 'date' column to create a new 'month' column
+all_data$month <- format(all_data$date, "%m-%Y")
+
+# Display structure of 'all_data' dataframe
+str(all_data)
+```
+
+```{r analysis, include=FALSE}
+# Analyze the data using SQL through sqldf
+
+# Total number of visits
+total_visits <- sqldf("SELECT COUNT(*) AS total_visits FROM all_data")
+
+# Number of different restaurants
+num_restaurants <- sqldf("SELECT COUNT(DISTINCT restaurant) AS num_restaurants FROM all_data")
+
+# Average amount spent per visit
+avg_amount_spent <- sqldf("SELECT AVG(amount) AS avg_amount_spent FROM all_data")
+std_amount_spent <- sqldf("SELECT STDEV(amount) AS std_amount_spent FROM all_data")
+
+# Month with the most visits
+month_visits_month <- sqldf("
+  SELECT
+    month as Month,
+    COUNT(*) AS TotalVisits
+  FROM all_data
+  GROUP BY month
+  ORDER BY TotalVisits DESC
+  LIMIT 1
+")
+
+# Average size of a party
+avg_party_size <- sqldf("SELECT AVG(guests) AS avg_party_size FROM all_data")
+
+# Percentage of parties that did not consume wine
+pct_no_wine <- sqldf("SELECT ROUND((SUM(CASE WHEN wine = 'No' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) AS pct_no_wine FROM all_data")
+```
+
+## Analysis of Restaurant Visits
+
+We recorded a total number of `r total_visits$total_visits` visits across `r num_restaurants$num_restaurants` different restaurants. The average amount spent for a visit across all restaurants is $`r round(avg_amount_spent$avg_amount_spent, 2)` (σ = `r round(std_amount_spent$std_amount_spent, 2)`). The most visits were during the month of `r month_visits_month$Month`. The average size of a party was ⌊`r round(avg_party_size$avg_party_size, 2)`⌋ =  `r floor(avg_party_size$avg_party_size)` and `r round(pct_no_wine$pct_no_wine, 2)`% of all parties did not consume wine.
+
+## Summary of Revenue
+
+```{r summary, include=FALSE}
+# Summarize revenue per restaurant
+summary_revenue <- sqldf("
+  SELECT restaurant AS Restaurant,
+    COUNT(*) AS Total_Visits, 
+    SUM(amount) AS Total_Sales_$, 
+    ROUND(AVG(amount), 2) AS Avg_Revenue_Per_Visit_$
+  FROM all_data
+  GROUP BY restaurant
+")
+```
+
+```{r table, echo=FALSE}
+kable(summary_revenue, format = "html", align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
